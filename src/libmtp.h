@@ -2,7 +2,7 @@
  * \file libmtp.h
  * Interface to the Media Transfer Protocol library.
  *
- * Copyright (C) 2005-2012 Linus Walleij <triad@df.lth.se>
+ * Copyright (C) 2005-2013 Linus Walleij <triad@df.lth.se>
  * Copyright (C) 2005-2008 Richard A. Low <richard@wentnet.com>
  * Copyright (C) 2007 Ted Bullock <tbullock@canada.com>
  * Copyright (C) 2008 Florent Mertens <flomertens@gmail.com>
@@ -29,8 +29,8 @@
 #ifndef LIBMTP_H_INCLUSION_GUARD
 #define LIBMTP_H_INCLUSION_GUARD
 
-#define LIBMTP_VERSION 1.1.5
-#define LIBMTP_VERSION_STRING "1.1.5"
+#define LIBMTP_VERSION 1.1.12
+#define LIBMTP_VERSION_STRING "1.1.12"
 
 /* This handles MSVC pecularities */
 #ifdef _MSC_VER
@@ -50,6 +50,8 @@ typedef unsigned __int16 uint16_t;
 typedef __int32 int32_t;
 typedef unsigned __int32 uint32_t;
 typedef unsigned __int64 uint64_t;
+#else
+#include <sys/time.h>
 #endif
 
 #include <stdio.h>
@@ -401,6 +403,30 @@ typedef enum {
   LIBMTP_DATATYPE_INT64,
   LIBMTP_DATATYPE_UINT64,
 } LIBMTP_datatype_t;
+
+/**
+ * These are device capabilities
+ */
+typedef enum {
+  /**
+   * This capability tells whether you can call the funcion getting
+   * partial objects, @see LIBMTP_GetPartialObject()
+   */
+  LIBMTP_DEVICECAP_GetPartialObject,
+  /**
+   * This capability tells whether you can call the function sending
+   * partial objects. @see LIBMTP_SendPartialObject()
+   */
+  LIBMTP_DEVICECAP_SendPartialObject,
+  /**
+   * This capability tells whether you can call the functions editing
+   * objects in-place on a device.
+   * @see LIBMTP_BeginEditObject()
+   * @see LIBMTP_EndEditObject()
+   * @see LIBMTP_TruncateObject()
+   */
+  LIBMTP_DEVICECAP_EditObjects,
+} LIBMTP_devicecap_t;
 
 /**
  * These are the numbered error codes. You can also
@@ -771,6 +797,9 @@ struct LIBMTP_devicestorage_struct {
 enum LIBMTP_event_enum {
   LIBMTP_EVENT_NONE,
   LIBMTP_EVENT_STORE_ADDED,
+  LIBMTP_EVENT_STORE_REMOVED,
+  LIBMTP_EVENT_OBJECT_ADDED,
+  LIBMTP_EVENT_OBJECT_REMOVED,
 };
 typedef enum LIBMTP_event_enum LIBMTP_event_t;
 
@@ -822,6 +851,7 @@ int LIBMTP_Get_Batterylevel(LIBMTP_mtpdevice_t *,
 int LIBMTP_Get_Secure_Time(LIBMTP_mtpdevice_t *, char ** const);
 int LIBMTP_Get_Device_Certificate(LIBMTP_mtpdevice_t *, char ** const);
 int LIBMTP_Get_Supported_Filetypes(LIBMTP_mtpdevice_t *, uint16_t ** const, uint16_t * const);
+int LIBMTP_Check_Capability(LIBMTP_mtpdevice_t *, LIBMTP_devicecap_t);
 LIBMTP_error_t *LIBMTP_Get_Errorstack(LIBMTP_mtpdevice_t*);
 void LIBMTP_Clear_Errorstack(LIBMTP_mtpdevice_t*);
 void LIBMTP_Dump_Errorstack(LIBMTP_mtpdevice_t*);
@@ -979,7 +1009,7 @@ uint32_t LIBMTP_Create_Folder(LIBMTP_mtpdevice_t*, char *, uint32_t, uint32_t);
 int LIBMTP_Set_Folder_Name(LIBMTP_mtpdevice_t *, LIBMTP_folder_t *, const char *);
 /** @} */
 
-#if 0
+
 /**
  * @}
  * @defgroup playlists The audio/video playlist management API.
@@ -992,7 +1022,6 @@ LIBMTP_playlist_t *LIBMTP_Get_Playlist(LIBMTP_mtpdevice_t *, uint32_t const);
 int LIBMTP_Create_New_Playlist(LIBMTP_mtpdevice_t *, LIBMTP_playlist_t * const);
 int LIBMTP_Update_Playlist(LIBMTP_mtpdevice_t *, LIBMTP_playlist_t * const);
 int LIBMTP_Set_Playlist_Name(LIBMTP_mtpdevice_t *, LIBMTP_playlist_t *, const char *);
-#endif
 
 /**
  * @}
@@ -1015,14 +1044,24 @@ int LIBMTP_Set_Album_Name(LIBMTP_mtpdevice_t *, LIBMTP_album_t *, const char *);
  */
 int LIBMTP_Delete_Object(LIBMTP_mtpdevice_t *, uint32_t);
 int LIBMTP_Set_Object_Filename(LIBMTP_mtpdevice_t *, uint32_t , char *);
+int LIBMTP_GetPartialObject(LIBMTP_mtpdevice_t *, uint32_t const,
+                            uint64_t, uint32_t,
+                            unsigned char **, unsigned int *);
+int LIBMTP_SendPartialObject(LIBMTP_mtpdevice_t *, uint32_t const,
+                             uint64_t, unsigned char *, unsigned int);
+int LIBMTP_BeginEditObject(LIBMTP_mtpdevice_t *, uint32_t const);
+int LIBMTP_EndEditObject(LIBMTP_mtpdevice_t *, uint32_t const);
+int LIBMTP_TruncateObject(LIBMTP_mtpdevice_t *, uint32_t const, uint64_t);
 
 /**
  * @}
  * @defgroup files The events API.
  * @{
  */
+typedef void(* LIBMTP_event_cb_fn) (int, LIBMTP_event_t, uint32_t, void *);
 int LIBMTP_Read_Event(LIBMTP_mtpdevice_t *, LIBMTP_event_t *, uint32_t *);
-
+int LIBMTP_Read_Event_Async(LIBMTP_mtpdevice_t *, LIBMTP_event_cb_fn, void *);
+int LIBMTP_Handle_Events_Timeout_Completed(struct timeval *, int *);
 
 /** @} */
 
@@ -1032,3 +1071,4 @@ int LIBMTP_Read_Event(LIBMTP_mtpdevice_t *, LIBMTP_event_t *, uint32_t *);
 #endif
 
 #endif /* LIBMTP_H_INCLUSION_GUARD */
+

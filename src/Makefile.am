@@ -3,7 +3,8 @@ lib_LTLIBRARIES = libmtp.la
 libmtp_la_CFLAGS = @LIBUSB_CFLAGS@
 libmtp_la_SOURCES = libmtp.c unicode.c unicode.h util.c util.h \
 	gphoto2-endian.h _stdint.h ptp.c ptp.h libusb-glue.h \
-	music-players.h device-flags.h mtpz.h
+	music-players.h device-flags.h mtpz.h \
+	chdk_live_view.h chdk_ptp.h
 
 if MTPZ_COMPILE
 libmtp_la_SOURCES += mtpz.c
@@ -46,9 +47,9 @@ EXTRA_DIST=libmtp.h.in libmtp.sym ptp-pack.c
 #  increment AGE, Otherwise AGE is reset to 0. If CURRENT has changed,
 #  REVISION is set to 0, otherwise REVISION is incremented.
 # ---------------------------------------------------------------------------
-CURRENT=9
-AGE=0
-REVISION=5
+CURRENT=12
+AGE=3
+REVISION=0
 SOVERSION=$(CURRENT):$(REVISION):$(AGE)
 LT_CURRENT_MINUS_AGE=`expr $(CURRENT) - $(AGE)`
 
