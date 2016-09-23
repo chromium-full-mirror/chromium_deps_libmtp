@@ -1,7 +1,7 @@
-diff --git a/examples/evolution-sync.sh b/examples/evolution-sync.sh
-index 53ca0b9..0c54a32 100755
---- a/examples/evolution-sync.sh
-+++ b/examples/evolution-sync.sh
+Index: examples/evolution-sync.sh
+===================================================================
+--- examples/evolution-sync.sh	(revision 148712)
++++ examples/evolution-sync.sh	(working copy)
 @@ -1,4 +1,21 @@
  #!/bin/bash
 +#
@@ -24,19 +24,51 @@ index 53ca0b9..0c54a32 100755
  
  # Example evolution synchronization script by Nicolas Tetreault,
  # modified by Linus Walleij.
-diff --git a/ltmain.sh b/ltmain.sh
-index 63ae69d..96b101f 100644
---- a/ltmain.sh
-+++ b/ltmain.sh
+Index: src/ptp-pack.c
+===================================================================
+--- src/ptp-pack.c	(revision 149246)
++++ src/ptp-pack.c	(working copy)
+@@ -1,3 +1,27 @@
++/* ptp-pack.c
++ *
++ * Copyright (C) 2001-2004 Mariusz Woloszyn <emsi@ipartners.pl>
++ * Copyright (C) 2003-2012 Marcus Meissner <marcus@jet.franken.de>
++ * Copyright (C) 2006-2008 Linus Walleij <triad@df.lth.se>
++ * Copyright (C) 2007 Tero Saarni <tero.saarni@gmail.com>
++ * Copyright (C) 2009 Axel Waggershauser <awagger@web.de>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the
++ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
++ * Boston, MA 02111-1307, USA.
++ */
++
+ /* currently this file is included into ptp.c */
+ 
+ #ifdef HAVE_ICONV
+Index: ltmain.sh
+===================================================================
+--- ltmain.sh	(revision 148712)
++++ ltmain.sh	(working copy)
 @@ -1,4 +1,3 @@
 -
  # libtool (GNU libtool) 2.4.2
  # Written by Gordon Matzigkeit <gord@gnu.ai.mit.edu>, 1996
  
-diff --git a/doc/examples.h b/doc/examples.h
-index 3e88ca4..d6dbbcd 100644
---- a/doc/examples.h
-+++ b/doc/examples.h
+Index: doc/examples.h
+===================================================================
+--- doc/examples.h	(revision 148712)
++++ doc/examples.h	(working copy)
 @@ -1,3 +1,23 @@
 +/**
 + *
@@ -61,10 +93,10 @@ index 3e88ca4..d6dbbcd 100644
  /*
   * List examples here...
   */
-diff --git a/doc/mainpage.h b/doc/mainpage.h
-index 19ef339..5e83263 100644
---- a/doc/mainpage.h
-+++ b/doc/mainpage.h
+Index: doc/mainpage.h
+===================================================================
+--- doc/mainpage.h	(revision 148712)
++++ doc/mainpage.h	(working copy)
 @@ -1,4 +1,24 @@
  /**
 + *

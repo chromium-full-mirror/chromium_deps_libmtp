@@ -1,9 +1,9 @@
 diff --git a/src/libmtp.c b/src/libmtp.c
-index 288440f..c3df3f5 100644
+index bbe2642..b8f856b 100644
 --- a/src/libmtp.c
 +++ b/src/libmtp.c
-@@ -9229,6 +9229,27 @@ int LIBMTP_TruncateObject(LIBMTP_mtpdevice_t *device, uint32_t const id,
- 
+@@ -8962,6 +8962,27 @@ int LIBMTP_Get_Thumbnail(LIBMTP_mtpdevice_t *device, uint32_t const id,
+ }
  
  /**
 + * Get thumbnail format of a file.
@@ -31,10 +31,10 @@ index 288440f..c3df3f5 100644
   * supplied. If the <code>tracks</code> field of the metadata
   * contains a track listing, these tracks will be added to the
 diff --git a/src/libmtp.h b/src/libmtp.h
-index ade0da0..7b31a8a 100644
+index f923cc1..07aa273 100644
 --- a/src/libmtp.h
 +++ b/src/libmtp.h
-@@ -954,6 +954,8 @@ int LIBMTP_Get_Representative_Sample(LIBMTP_mtpdevice_t *, uint32_t const,
+@@ -924,6 +924,8 @@ int LIBMTP_Get_Representative_Sample(LIBMTP_mtpdevice_t *, uint32_t const,
                            LIBMTP_filesampledata_t *);
  int LIBMTP_Get_Thumbnail(LIBMTP_mtpdevice_t *, uint32_t const,
                           unsigned char **data, unsigned int *size);
@@ -44,10 +44,10 @@ index ade0da0..7b31a8a 100644
  /**
   * @}
 diff --git a/src/libmtp.h.in b/src/libmtp.h.in
-index 7523ac0..9935e2b 100644
+index 2b2f0bb..49edd3c 100644
 --- a/src/libmtp.h.in
 +++ b/src/libmtp.h.in
-@@ -954,6 +954,8 @@ int LIBMTP_Get_Representative_Sample(LIBMTP_mtpdevice_t *, uint32_t const,
+@@ -924,6 +924,8 @@ int LIBMTP_Get_Representative_Sample(LIBMTP_mtpdevice_t *, uint32_t const,
                            LIBMTP_filesampledata_t *);
  int LIBMTP_Get_Thumbnail(LIBMTP_mtpdevice_t *, uint32_t const,
                           unsigned char **data, unsigned int *size);
@@ -57,14 +57,12 @@ index 7523ac0..9935e2b 100644
  /**
   * @}
 diff --git a/src/libmtp.sym b/src/libmtp.sym
-index 66b87f9..ee65ce4 100644
+index 4130fe8..1148edd 100644
 --- a/src/libmtp.sym
 +++ b/src/libmtp.sym
-@@ -103,6 +103,7 @@ LIBMTP_Set_Playlist_Name
+@@ -103,4 +103,5 @@ LIBMTP_Set_Playlist_Name
  LIBMTP_Set_Album_Name
  LIBMTP_Set_Object_Filename
  LIBMTP_Get_Thumbnail
 +LIBMTP_Get_Thumbnail_Format
  LIBMTP_Read_Event
- LIBMTP_Read_Event_Async
- LIBMTP_Handle_Events_Timeout_Completed

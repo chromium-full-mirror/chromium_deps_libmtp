@@ -1,12 +1,39 @@
-diff --git a/src/ptp.h b/src/ptp.h
-index 62938b4..f25618c 100644
---- a/src/ptp.h
-+++ b/src/ptp.h
-@@ -3238,7 +3238,7 @@ uint16_t ptp_olympus_getcameraid (PTPParams*, unsigned char**, unsigned int *);
+Index: src/unicode.c
+===================================================================
+--- src/unicode.c	(revision 148519)
++++ src/unicode.c	(working copy)
+@@ -29,7 +29,8 @@
+  *
+  */
+ 
+-#include <config.h>
++#include "config.h"
++
+ #include <stdlib.h>
+ #include <string.h>
+ #ifdef HAVE_ICONV
+Index: src/playlist-spl.c
+===================================================================
+--- src/playlist-spl.c	(revision 148519)
++++ src/playlist-spl.c	(working copy)
+@@ -21,7 +21,7 @@
+  * Boston, MA 02111-1307, USA.
+  */
+ 
+-#include <config.h>
++#include "config.h"
+ 
+ #include <stdio.h>
+ #include <stdlib.h> // mkstmp()
+Index: src/ptp.h
+===================================================================
+--- src/ptp.h	(revision 148519)
++++ src/ptp.h	(working copy)
+@@ -2808,7 +2808,7 @@
  static inline int
  ptp_operation_issupported(PTPParams* params, uint16_t operation)
  {
--	unsigned int i=0;
+-	int i=0;
 +	uint32_t i=0;
  
  	for (;i<params->deviceinfo.OperationsSupported_len;i++) {
