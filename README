@@ -14,10 +14,15 @@ controller interface, using libusb to access the host
 controller.
 
 If you're more interested in the MTP responders, gadgets like
-MP3 players, mobile phones etc, look into MeeGo:s Buteo Sync:
-http://wiki.meego.com/Buteo - these guys are creating a fully
-open source MTP responder.
-
+MP3 players, mobile phones etc, look into:
+- MeeGo:s Buteo Sync:
+  https://github.com/nemomobile/buteo-mtp
+  https://wiki.merproject.org/wiki/Buteo/MTP
+- Android has an MTP responder implementation:
+  https://android.googlesource.com/platform/frameworks/base/+/master/media/jni/
+- Ubuntu/Ricardo Salveti has mtp-server and libmtp-server going:
+  https://code.launchpad.net/~phablet-team/mtp/trunk
+  http://bazaar.launchpad.net/~phablet-team/mtp/trunk/files
 
 Heritage
 --------
@@ -138,6 +143,25 @@ Some MTP devices have strange pecularities. We try to work around
 these whenever we can, sometimes we cannot work around it or we
 cannot test your solution.
 
+* Android locked screen: some devices just report zero files
+  and no storages when the device screen is locked, it looks like
+  so:
+
+  mtp-detect
+  Device 0 (VID=04e8 and PID=6860) is a Samsung Galaxy models (MTP).
+  Attempting to connect device(s)
+  Error 1: Get Storage information failed.
+  Device: SHV-E210K
+  LIBMTP_Get_Storage(): No data available
+  OK.
+
+  This is probably so as not to allow the MTP access to be used
+  as a "backdoor" into the device. Unlock the device before listing
+  files, set the autolock to some large value or disabled if it
+  disturbs you, you are causing this to yourself, or should we say
+  that your vendor is prioritizing security and privacy over
+  ease-of-use. (You may talk to your vendor about this.)
+
 * mtp-* tools doesn't work because someone else is already hogging
   the device
 
@@ -150,10 +174,12 @@ cannot test your solution.
 
   Then re-attach the device.
 
-  Sometimes the "gvfs-gphoto2-volume-monitor" is running on the
-  system and hogging the device, try something like:
+  Sometimes some gvfs daemons are running on the
+  system and hogging the device, try stopping them
+  with something like these commands:
 
-  pkill gfvs-gphoto2-volume-monitor
+  killall gvfs-mtp-volume-monitor
+  killall gvfs-gphoto2-volume-monitor
 
   Then plug in the device and issue "mtp-detect" to figure out if
   this may be the case.
@@ -204,13 +230,6 @@ cannot test your solution.
   If this bug in your device annoys you, contact your device
   manufacturer and ask them to test their product with some libmtp
   program.
-
-* Android locked screen: some devices just report zero files
-  and no storages when the device is locked, probably so as not
-  to allow the MTP access to be used as a "backdoor" into the
-  device. Unlock the device before listing files, set the autolock
-  to some large value or disabled if it disturbs you, you are
-  causing this to yourself.
 
 * Samsung Android 2.3.x devices: these have a special MTP stack
   with some specific bugs that we have maybe nailed down now.
@@ -579,19 +598,30 @@ Here is what some people do:
  6. Once mtp-detect gives you an "Ok", open either Rhythmbox or Gnomad2,
     everything should work.
 
-Linux: Try this, if you have a recent 2.6.x Linux kernel,
-run (as root) something like:
+Linux: Try this, if you have a recent Linux kernel,
+add the file (as root):
+
+/etc/modprobe.d/no-usb-storage.conf
+
+With the contents:
+
+options usb-storage quirks=1234:4321:i
+
+This will tell usb-storage to ignore this device when it's inserted
+so it is not hogged by the mass storage interfaces. Remove and re-insert
+the device and see if it works. Usually this does the trick.
+
+For older systems, or as a bigger hammer, run (as root) something
+like:
 
 > rmmod usb_storage ; mtp-detect
 
 You can run most any command or a client like gnomad2 or
 Amarok immediately after the rmmod command. This works
-sometimes. Another way:
+sometimes. Another even more brutal approach is this:
 
 * Edit /etc/modprobe.d/blacklist
-
 * Add the line "blacklist usb-storage"
-
 * Reboot.
 
 Now none of you USB disks, flash memory sticks etc will be
@@ -998,18 +1028,45 @@ builders summit, might come to recycle this:
 
 - Protocol overview
   - Transactional filesystem - no corruption due to unplugged cables!
+  - The host and the device can access the files simultaneously, the
+    device will always "own" the physical file system and proxy the
+    host (MTP initiator).
 - libmtp interface
 - relation to libgphoto2
 - User expectations fall short:
   - Not really a mountable filesystem.
   - Streaming does not work. (Size needs to be known beforehand due to
     transactional nature.)
+  - GVFS MTP backend to the rescue.
 - Device sins
+  - Using the same VID/PID for several modes, some of which are not MTP.
+    HTC Zopo, HD2, Bird (0x0bb4/0x0c02). Thanks for that, now we cannot
+    detect the protocol from just VID+PID but have to examine the interfaces.
   - Android bugs
   - Samsungs special Android MTP stack
   - SonyEricsson Aricent stack for Xperia Androids pre 4.0, broken headers!
   - Flat access model vs hierarchical, how Android uses MTP as an hierachical
     file system while it was previously a flat database.
+  - Old paradigm: scan the entire non-hierarchical storage for all content,
+    build a cache to speed up the (USB 1.1!) link. Usually all files were
+    stored in the root folder or a single folder named "/Music" or similar.
+  - Android introduced deeply nested folder hierarchies, not seen before
+    on MTP devices.
+  - Microsoft not using the complete metadata dump feature of the MTP
+    protocol (once introduced by creative) instead they walk directories
+    separately.
+  - So caching a big device will take long time and/or timeout.
+  - Go-MTPFS (FUSE) and GVFS MTP - doing the partial directory walk rather
+    than caching all files.
+  - Especially Android devices nowadays assume that
+    you want to index a folder at the time, whereas older MTP devices (such
+    as those from Creative) would assume that you wanted to index the entire
+    device as it was plugged in, and device firmware is now ever more tailored
+    toward per-folder filetree walking. This makes it harder for the library
+    to provide the right abstractions: do we provide an API for indexing the
+    whole device which is unacceptably slow on new devices, or do we provide
+    an API for indexing a directory at the time which will somehow work on
+    older devices too? Shall we deprecate the older API?
 - Detecting from vendor extension, can fix in newer extensions!
 - Autoprobing on Linux
   - Color devices do not like autoprobing
@@ -1018,7 +1075,8 @@ builders summit, might come to recycle this:
   - Multimode USB - one PID for each mode due to Windows limitations not
     applicable to Linux, SONY devices have ~5 different PIDs for a single
     device.
-  - Mode switch devices?
-- MTPZ
+  - Mode switch devices? Maybe we do this wrong.
+- MTPZ, came and went. Apparently deprecated by Microsoft with Windows
+  Phone 8.
 - Ideas??
 

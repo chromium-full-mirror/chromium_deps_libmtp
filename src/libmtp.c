@@ -116,11 +116,20 @@ typedef struct propertymap_struct {
   struct propertymap_struct *next;
 } propertymap_t;
 
+/*
+ * This is a simple container for holding our callback and user_data
+ * for parsing onwards to the usb_event_async function.
+ */
+typedef struct event_cb_data_struct {
+  LIBMTP_event_cb_fn cb;
+  void *user_data;
+} event_cb_data_t;
+
 // Global variables
 // This holds the global filetype mapping table
-static filemap_t *filemap = NULL;
+static filemap_t *g_filemap = NULL;
 // This holds the global property mapping table
-static propertymap_t *propertymap = NULL;
+static propertymap_t *g_propertymap = NULL;
 
 /*
  * Forward declarations of local (static) functions.
@@ -144,7 +153,8 @@ static void get_handles_recursively(LIBMTP_mtpdevice_t *device,
 				    uint32_t parent);
 static void free_storage_list(LIBMTP_mtpdevice_t *device);
 static int sort_storage_by(LIBMTP_mtpdevice_t *device, int const sortby);
-static uint32_t get_writeable_storageid(LIBMTP_mtpdevice_t *device, uint64_t fitsize);
+static uint32_t get_writeable_storageid(LIBMTP_mtpdevice_t *device,
+					uint64_t fitsize);
 static int get_storage_freespace(LIBMTP_mtpdevice_t *device,
 				 LIBMTP_devicestorage_t *storage,
 				 uint64_t *freespace);
@@ -211,6 +221,8 @@ static int set_object_filename(LIBMTP_mtpdevice_t *device,
                 const char **newname);
 static char *generate_unique_filename(PTPParams* params, char const * const filename);
 static int check_filename_exists(PTPParams* params, char const * const filename);
+static void LIBMTP_Handle_Event(PTPContainer *ptp_event,
+                                LIBMTP_event_t *event, uint32_t *out1);
 
 /**
  * These are to wrap the get/put handlers to convert from the MTP types to PTP types
@@ -223,7 +235,7 @@ typedef struct _MTPDataHandler {
 } MTPDataHandler;
 
 static uint16_t get_func_wrapper(PTPParams* params, void* priv, unsigned long wantlen, unsigned char *data, unsigned long *gotlen);
-static uint16_t put_func_wrapper(PTPParams* params, void* priv, unsigned long sendlen, unsigned char *data, unsigned long *putlen);
+static uint16_t put_func_wrapper(PTPParams* params, void* priv, unsigned long sendlen, unsigned char *data);
 
 /**
  * Checks if a filename ends with ".ogg". Used in various
@@ -305,7 +317,7 @@ static int register_filetype(char const * const description, LIBMTP_filetype_t c
   filemap_t *new = NULL, *current;
 
   // Has this LIBMTP filetype been registered before ?
-  current = filemap;
+  current = g_filemap;
   while (current != NULL) {
     if(current->id == id) {
       break;
@@ -327,10 +339,10 @@ static int register_filetype(char const * const description, LIBMTP_filetype_t c
     new->ptp_id = ptp_id;
 
     // Add the entry to the list
-    if(filemap == NULL) {
-      filemap = new;
+    if(g_filemap == NULL) {
+      g_filemap = new;
     } else {
-      current = filemap;
+      current = g_filemap;
       while (current->next != NULL ) current=current->next;
       current->next = new;
     }
@@ -407,7 +419,7 @@ static uint16_t map_libmtp_type_to_ptp_type(LIBMTP_filetype_t intype)
 {
   filemap_t *current;
 
-  current = filemap;
+  current = g_filemap;
 
   while (current != NULL) {
     if(current->id == intype) {
@@ -430,7 +442,7 @@ static LIBMTP_filetype_t map_ptp_type_to_libmtp_type(uint16_t intype)
 {
   filemap_t *current;
 
-  current = filemap;
+  current = g_filemap;
 
   while (current != NULL) {
     if(current->ptp_id == intype) {
@@ -476,7 +488,7 @@ static int register_property(char const * const description, LIBMTP_property_t c
   propertymap_t *new = NULL, *current;
 
   // Has this LIBMTP propety been registered before ?
-  current = propertymap;
+  current = g_propertymap;
   while (current != NULL) {
     if(current->id == id) {
       break;
@@ -498,10 +510,10 @@ static int register_property(char const * const description, LIBMTP_property_t c
     new->ptp_id = ptp_id;
 
     // Add the entry to the list
-    if(propertymap == NULL) {
-      propertymap = new;
+    if(g_propertymap == NULL) {
+      g_propertymap = new;
     } else {
-      current = propertymap;
+      current = g_propertymap;
       while (current->next != NULL ) current=current->next;
       current->next = new;
     }
@@ -701,7 +713,7 @@ static uint16_t map_libmtp_property_to_ptp_property(LIBMTP_property_t inproperty
 {
   propertymap_t *current;
 
-  current = propertymap;
+  current = g_propertymap;
 
   while (current != NULL) {
     if(current->id == inproperty) {
@@ -723,7 +735,7 @@ static LIBMTP_property_t map_ptp_property_to_libmtp_property(uint16_t inproperty
 {
   propertymap_t *current;
 
-  current = propertymap;
+  current = g_propertymap;
 
   while (current != NULL) {
     if(current->ptp_id == inproperty) {
@@ -796,7 +808,7 @@ char const * LIBMTP_Get_Filetype_Description(LIBMTP_filetype_t intype)
 {
   filemap_t *current;
 
-  current = filemap;
+  current = g_filemap;
 
   while (current != NULL) {
     if(current->id == intype) {
@@ -819,7 +831,7 @@ char const * LIBMTP_Get_Property_Description(LIBMTP_property_t inproperty)
 {
   propertymap_t *current;
 
-  current = propertymap;
+  current = g_propertymap;
 
   while (current != NULL) {
     if(current->id == inproperty) {
@@ -1328,13 +1340,14 @@ static char *get_string_from_object(LIBMTP_mtpdevice_t *device, uint32_t const o
 {
   PTPPropertyValue propval;
   char *retstring = NULL;
-  PTPParams *params = (PTPParams *) device->params;
+  PTPParams *params;
   uint16_t ret;
   MTPProperties *prop;
 
-  if ( device == NULL || object_id == 0) {
+  if (!device || !object_id)
     return NULL;
-  }
+
+  params = (PTPParams *) device->params;
 
   prop = ptp_find_object_prop_in_cache(params, object_id, attribute_id);
   if (prop) {
@@ -1371,13 +1384,14 @@ static uint64_t get_u64_from_object(LIBMTP_mtpdevice_t *device,uint32_t const ob
 {
   PTPPropertyValue propval;
   uint64_t retval = value_default;
-  PTPParams *params = (PTPParams *) device->params;
+  PTPParams *params;
   uint16_t ret;
   MTPProperties *prop;
 
-  if ( device == NULL ) {
+  if (!device)
     return value_default;
-  }
+
+  params = (PTPParams *) device->params;
 
   prop = ptp_find_object_prop_in_cache(params, object_id, attribute_id);
   if (prop)
@@ -1410,13 +1424,14 @@ static uint32_t get_u32_from_object(LIBMTP_mtpdevice_t *device,uint32_t const ob
 {
   PTPPropertyValue propval;
   uint32_t retval = value_default;
-  PTPParams *params = (PTPParams *) device->params;
+  PTPParams *params;
   uint16_t ret;
   MTPProperties *prop;
 
-  if ( device == NULL ) {
+  if (!device)
     return value_default;
-  }
+
+  params = (PTPParams *) device->params;
 
   prop = ptp_find_object_prop_in_cache(params, object_id, attribute_id);
   if (prop)
@@ -1448,13 +1463,14 @@ static uint16_t get_u16_from_object(LIBMTP_mtpdevice_t *device, uint32_t const o
 {
   PTPPropertyValue propval;
   uint16_t retval = value_default;
-  PTPParams *params = (PTPParams *) device->params;
+  PTPParams *params;
   uint16_t ret;
   MTPProperties *prop;
 
-  if ( device == NULL ) {
+  if (!device)
     return value_default;
-  }
+
+  params = (PTPParams *) device->params;
 
   // This O(n) search should not be used so often, since code
   // using the cached properties don't usually call this function.
@@ -1489,13 +1505,14 @@ static uint8_t get_u8_from_object(LIBMTP_mtpdevice_t *device, uint32_t const obj
 {
   PTPPropertyValue propval;
   uint8_t retval = value_default;
-  PTPParams *params = (PTPParams *) device->params;
+  PTPParams *params;
   uint16_t ret;
   MTPProperties *prop;
 
-  if ( device == NULL ) {
+  if (!device)
     return value_default;
-  }
+
+  params = (PTPParams *) device->params;
 
   // This O(n) search should not be used so often, since code
   // using the cached properties don't usually call this function.
@@ -1529,12 +1546,13 @@ static int set_object_string(LIBMTP_mtpdevice_t *device, uint32_t const object_i
 			     uint16_t const attribute_id, char const * const string)
 {
   PTPPropertyValue propval;
-  PTPParams *params = (PTPParams *) device->params;
+  PTPParams *params;
   uint16_t ret;
 
-  if (device == NULL || string == NULL) {
+  if (!device || !string)
     return -1;
-  }
+
+  params = (PTPParams *) device->params;
 
   if (!ptp_operation_issupported(params,PTP_OC_MTP_SetObjectPropValue)) {
     add_error_to_errorstack(device, LIBMTP_ERROR_GENERAL, "set_object_string(): could not set object string: "
@@ -1565,12 +1583,13 @@ static int set_object_u32(LIBMTP_mtpdevice_t *device, uint32_t const object_id,
 			  uint16_t const attribute_id, uint32_t const value)
 {
   PTPPropertyValue propval;
-  PTPParams *params = (PTPParams *) device->params;
+  PTPParams *params;
   uint16_t ret;
 
-  if (device == NULL) {
+  if (!device)
     return -1;
-  }
+
+  params = (PTPParams *) device->params;
 
   if (!ptp_operation_issupported(params,PTP_OC_MTP_SetObjectPropValue)) {
     add_error_to_errorstack(device, LIBMTP_ERROR_GENERAL, "set_object_u32(): could not set unsigned 32bit integer property: "
@@ -1601,12 +1620,13 @@ static int set_object_u16(LIBMTP_mtpdevice_t *device, uint32_t const object_id,
 			  uint16_t const attribute_id, uint16_t const value)
 {
   PTPPropertyValue propval;
-  PTPParams *params = (PTPParams *) device->params;
+  PTPParams *params;
   uint16_t ret;
 
-  if (device == NULL) {
+  if (!device)
     return 1;
-  }
+
+  params = (PTPParams *) device->params;
 
   if (!ptp_operation_issupported(params,PTP_OC_MTP_SetObjectPropValue)) {
     add_error_to_errorstack(device, LIBMTP_ERROR_GENERAL, "set_object_u16(): could not set unsigned 16bit integer property: "
@@ -1636,12 +1656,13 @@ static int set_object_u8(LIBMTP_mtpdevice_t *device, uint32_t const object_id,
 			 uint16_t const attribute_id, uint8_t const value)
 {
   PTPPropertyValue propval;
-  PTPParams *params = (PTPParams *) device->params;
+  PTPParams *params;
   uint16_t ret;
 
-  if (device == NULL) {
+  if (!device)
     return 1;
-  }
+
+  params = (PTPParams *) device->params;
 
   if (!ptp_operation_issupported(params,PTP_OC_MTP_SetObjectPropValue)) {
     add_error_to_errorstack(device, LIBMTP_ERROR_GENERAL, "set_object_u8(): could not set unsigned 8bit integer property: "
@@ -1676,6 +1697,7 @@ LIBMTP_mtpdevice_t *LIBMTP_Get_First_Device(void)
   }
 
   if (devices == NULL || numdevs == 0) {
+    free(devices);
     return NULL;
   }
 
@@ -1746,12 +1768,12 @@ static void parse_extension_descriptor(LIBMTP_mtpdevice_t *mtpdevice,
   /* descriptors are divided by semicolons */
   while (end < strlen(desc)) {
     /* Skip past initial whitespace */
-    while (desc[start] == ' ' && end < strlen(desc)) {
+    while ((end < strlen(desc)) && (desc[start] == ' ' )) {
       start++;
       end++;
     }
     /* Detect extension */
-    while (desc[end] != ';' && end < strlen(desc))
+    while ((end < strlen(desc)) && (desc[end] != ';'))
       end++;
     if (end < strlen(desc)) {
       char *element = strndup(desc + start, end-start);
@@ -1760,7 +1782,7 @@ static void parse_extension_descriptor(LIBMTP_mtpdevice_t *mtpdevice,
         // printf("  Element: \"%s\"\n", element);
 
         /* Parse for an extension */
-        while (element[i] != ':' && i < strlen(element))
+        while ((i < strlen(element)) && (element[i] != ':'))
           i++;
         if (i < strlen(element)) {
           char *name = strndup(element, i);
@@ -1768,7 +1790,7 @@ static void parse_extension_descriptor(LIBMTP_mtpdevice_t *mtpdevice,
           // printf("    Extension: \"%s\"\n", name);
 
           /* Parse for minor/major punctuation mark for this extension */
-          while (element[i] != '.' && i < strlen(element))
+          while ((i < strlen(element)) && (element[i] != '.'))
             i++;
           if (i > majstart && i < strlen(element)) {
             LIBMTP_device_extension_t *extension;
@@ -1778,6 +1800,8 @@ static void parse_extension_descriptor(LIBMTP_mtpdevice_t *mtpdevice,
             char *minorstr = strndup(element + i + 1, strlen(element) - i - 1);
             major = atoi(majorstr);
             minor = atoi(minorstr);
+            // printf("    Major: \"%s\" (parsed %d) Minor: \"%s\" (parsed %d)\n",
+            //      majorstr, major, minorstr, minor);
 	    free(majorstr);
 	    free(minorstr);
             extension = malloc(sizeof(LIBMTP_device_extension_t));
@@ -1793,8 +1817,6 @@ static void parse_extension_descriptor(LIBMTP_mtpdevice_t *mtpdevice,
                 tmp = tmp->next;
               tmp->next = extension;
             }
-            // printf("    Major: \"%s\" (parsed %d) Minor: \"%s\" (parsed %d)\n",
-            //      majorstr, major, minorstr, minor);
           } else {
             LIBMTP_ERROR("LIBMTP ERROR: couldnt parse extension %s\n",
                          element);
@@ -1827,7 +1849,6 @@ LIBMTP_mtpdevice_t *LIBMTP_Open_Raw_Device_Uncached(LIBMTP_raw_device_t *rawdevi
 
   /* Allocate dynamic space for our device */
   mtp_device = (LIBMTP_mtpdevice_t *) malloc(sizeof(LIBMTP_mtpdevice_t));
-  memset(mtp_device, 0, sizeof(LIBMTP_mtpdevice_t));
   /* Check if there was a memory allocation error */
   if(mtp_device == NULL) {
     /* There has been an memory allocation error. We are going to ignore this
@@ -1840,6 +1861,7 @@ LIBMTP_mtpdevice_t *LIBMTP_Open_Raw_Device_Uncached(LIBMTP_raw_device_t *rawdevi
 
     return NULL;
   }
+  memset(mtp_device, 0, sizeof(LIBMTP_mtpdevice_t));
   // Non-cached by default
   mtp_device->cached = 0;
 
@@ -2153,27 +2175,27 @@ int LIBMTP_Read_Event(LIBMTP_mtpdevice_t *device, LIBMTP_event_t *event, uint32_
   PTPParams *params = (PTPParams *) device->params;
   PTPContainer ptp_event;
   uint16_t ret = ptp_usb_event_wait(params, &ptp_event);
-  uint16_t code;
-  uint32_t session_id;
-  uint32_t transaction_id;
-  uint32_t param1;
-  uint32_t param2;
-  uint32_t param3;
 
   if (ret != PTP_RC_OK) {
     /* Device is closing down or other fatal stuff, exit thread */
     return -1;
   }
+  LIBMTP_Handle_Event(&ptp_event, event, out1);
+  return 0;
+}
+
+void LIBMTP_Handle_Event(PTPContainer *ptp_event,
+                         LIBMTP_event_t *event, uint32_t *out1) {
+  uint16_t code;
+  uint32_t session_id;
+  uint32_t param1;
 
   *event = LIBMTP_EVENT_NONE;
 
   /* Process the event */
-  code = ptp_event.Code;
-  session_id = ptp_event.SessionID;
-  transaction_id = ptp_event.Transaction_ID;
-  param1 = ptp_event.Param1;
-  param2 = ptp_event.Param2;
-  param3 = ptp_event.Param3;
+  code = ptp_event->Code;
+  session_id = ptp_event->SessionID;
+  param1 = ptp_event->Param1;
 
   switch(code) {
     case PTP_EC_Undefined:
@@ -2184,9 +2206,13 @@ int LIBMTP_Read_Event(LIBMTP_mtpdevice_t *device, LIBMTP_event_t *event, uint32_
       break;
     case PTP_EC_ObjectAdded:
       LIBMTP_INFO("Received event PTP_EC_ObjectAdded in session %u\n", session_id);
+      *event = LIBMTP_EVENT_OBJECT_ADDED;
+      *out1 = param1;
       break;
     case PTP_EC_ObjectRemoved:
       LIBMTP_INFO("Received event PTP_EC_ObjectRemoved in session %u\n", session_id);
+      *event = LIBMTP_EVENT_OBJECT_REMOVED;
+      *out1 = param1;
       break;
     case PTP_EC_StoreAdded:
       LIBMTP_INFO("Received event PTP_EC_StoreAdded in session %u\n", session_id);
@@ -2197,6 +2223,8 @@ int LIBMTP_Read_Event(LIBMTP_mtpdevice_t *device, LIBMTP_event_t *event, uint32_
     case PTP_EC_StoreRemoved:
       LIBMTP_INFO("Received event PTP_EC_StoreRemoved in session %u\n", session_id);
       /* TODO: rescan storages */
+      *event = LIBMTP_EVENT_STORE_REMOVED;
+      *out1 = param1;
       break;
     case PTP_EC_DevicePropChanged:
       LIBMTP_INFO("Received event PTP_EC_DevicePropChanged in session %u\n", session_id);
@@ -2233,8 +2261,60 @@ int LIBMTP_Read_Event(LIBMTP_mtpdevice_t *device, LIBMTP_event_t *event, uint32_
       LIBMTP_INFO( "Received unknown event in session %u\n", session_id);
       break;
   }
+}
 
-  return 0;
+static void LIBMTP_Read_Event_Cb(PTPParams *params, uint16_t ret_code,
+                                 PTPContainer *ptp_event, void *user_data) {
+  event_cb_data_t *data = user_data;
+  LIBMTP_event_t event = LIBMTP_EVENT_NONE;
+  uint32_t param1 = 0;
+  int handler_ret;
+
+  switch (ret_code) {
+  case PTP_RC_OK:
+    handler_ret = LIBMTP_HANDLER_RETURN_OK;
+    LIBMTP_Handle_Event(ptp_event, &event, &param1);
+    break;
+  case PTP_ERROR_CANCEL:
+    handler_ret = LIBMTP_HANDLER_RETURN_CANCEL;
+    break;
+  default:
+    handler_ret = LIBMTP_HANDLER_RETURN_ERROR;
+    break;
+  }
+
+  data->cb(handler_ret, event, param1, data->user_data);
+  free(data);
+}
+
+/**
+ * This function reads events sent by the device, in a non-blocking manner.
+ * The callback function will be called when an event is received, but for the function
+ * to make progress, polling must take place, using LIBMTP_Handle_Events_Timeout_Completed.
+ *
+ * After an event is received, this function should be called again to listen for the next
+ * event.
+ *
+ * For now, this non-blocking mechanism only works with libusb-1.0, and not any of the
+ * other usb library backends. Attempting to call this method with another backend will
+ * always return an error.
+ *
+ * @param device a pointer to the MTP device to poll for events.
+ * @param cb a callback to be invoked when an event is received.
+ * @param user_data arbitrary user data passed to the callback.
+ * @return 0 on success, any other value means that the callback was not registered and
+ *         no event notification will take place.
+ */
+int LIBMTP_Read_Event_Async(LIBMTP_mtpdevice_t *device, LIBMTP_event_cb_fn cb, void *user_data) {
+  PTPParams *params = (PTPParams *) device->params;
+  event_cb_data_t *data =  malloc(sizeof(event_cb_data_t));
+  uint16_t ret;
+
+  data->cb = cb;
+  data->user_data = user_data;
+
+  ret = ptp_usb_event_async(params, LIBMTP_Read_Event_Cb, data);
+  return ret == PTP_RC_OK ? 0 : -1;
 }
 
 /**
@@ -2308,6 +2388,7 @@ LIBMTP_error_number_t LIBMTP_Get_Connected_Devices(LIBMTP_mtpdevice_t **device_l
   /* Assign linked list of devices */
   if (devices == NULL || numdevs == 0) {
     *device_list = NULL;
+    free(devices);
     return LIBMTP_ERROR_NO_DEVICE_ATTACHED;
   }
 
@@ -2415,6 +2496,8 @@ static void add_ptp_error_to_errorstack(LIBMTP_mtpdevice_t *device,
 					uint16_t ptp_error,
 					char const * const error_text)
 {
+  PTPParams      *params = (PTPParams *) device->params;
+
   if (device == NULL) {
     LIBMTP_ERROR("LIBMTP PANIC: Trying to add PTP error to a NULL device!\n");
     return;
@@ -2424,7 +2507,7 @@ static void add_ptp_error_to_errorstack(LIBMTP_mtpdevice_t *device,
     outstr[sizeof(outstr)-1] = '\0';
     add_error_to_errorstack(device, LIBMTP_ERROR_PTP_LAYER, outstr);
 
-    snprintf(outstr, sizeof(outstr), "Error %04x: %s", ptp_error, ptp_strerror(ptp_error));
+    snprintf(outstr, sizeof(outstr), "Error %04x: %s", ptp_error, ptp_strerror(ptp_error, params->deviceinfo.VendorExtensionID));
     outstr[sizeof(outstr)-1] = '\0';
     add_error_to_errorstack(device, LIBMTP_ERROR_PTP_LAYER, outstr);
   }
@@ -2580,7 +2663,7 @@ static int get_all_metadata_fast(LIBMTP_mtpdevice_t *device)
       prop++;
   }
   lasthandle = 0xffffffff;
-  params->objects = calloc (sizeof(PTPObject),cnt);
+  params->objects = calloc (cnt, sizeof(PTPObject));
   prop = props;
   i = -1;
   for (j=0;j<nrofprops;j++) {
@@ -2630,7 +2713,7 @@ static int get_all_metadata_fast(LIBMTP_mtpdevice_t *device)
         newprops = realloc(params->objects[i].mtpprops,
 		(params->objects[i].nrofmtpprops+1)*sizeof(MTPProperties));
       } else {
-        newprops = calloc(sizeof(MTPProperties),1);
+        newprops = calloc(1,sizeof(MTPProperties));
       }
       if (!newprops) return 0; /* FIXME: error handling? */
       params->objects[i].mtpprops = newprops;
@@ -2646,6 +2729,7 @@ static int get_all_metadata_fast(LIBMTP_mtpdevice_t *device)
   /* mark last entry also */
   params->objects[i].flags |= PTPOBJECT_OBJECTINFO_LOADED;
   params->nrofobjects = i+1;
+  free (props);
   /* The device might not give the list in linear ascending order */
   ptp_objects_sort (params);
   return 0;
@@ -2929,7 +3013,8 @@ static int sort_storage_by(LIBMTP_mtpdevice_t *device,int const sortby)
  *        storage for.
  * @param fitsize a file of this file must fit on the device.
  */
-static uint32_t get_writeable_storageid(LIBMTP_mtpdevice_t *device, uint64_t fitsize)
+static uint32_t get_writeable_storageid(LIBMTP_mtpdevice_t *device,
+					uint64_t fitsize)
 {
   LIBMTP_devicestorage_t *storage;
   uint32_t store = 0x00000000; //Should this be 0xffffffffu instead?
@@ -2979,6 +3064,32 @@ static uint32_t get_writeable_storageid(LIBMTP_mtpdevice_t *device, uint64_t fit
   }
 
   return store;
+}
+
+/**
+ * Tries to suggest a storage_id of a given ID when we have a parent
+ * @param device a pointer to the device where to search for the storage ID
+ * @param fitsize a file of this file must fit on the device.
+ * @param parent_id look for this ID
+ * @ret storageID
+ */
+static int get_suggested_storage_id(LIBMTP_mtpdevice_t *device,
+				    uint64_t fitsize,
+				    uint32_t parent_id)
+{
+  PTPParams *params = (PTPParams *) device->params;
+  PTPObject *ob;
+  uint16_t ret;
+
+  ret = ptp_object_want(params, parent_id, PTPOBJECT_MTPPROPLIST_LOADED, &ob);
+  if ((ret != PTP_RC_OK) || (ob->oi.StorageID == 0)) {
+    add_ptp_error_to_errorstack(device, ret, "get_suggested_storage_id(): "
+				"could not get storage id from parent id.");
+    return get_writeable_storageid(device, fitsize);
+  } else {
+    /* OK we know the parent storage, then use that */
+    return ob->oi.StorageID;
+  }
 }
 
 /**
@@ -3070,7 +3181,7 @@ void LIBMTP_Dump_Device_Info(LIBMTP_mtpdevice_t *device)
   for (i=0;i<params->deviceinfo.OperationsSupported_len;i++) {
     char txt[256];
 
-    (void) ptp_render_opcode(params, params->deviceinfo.OperationsSupported[i],
+    (void) ptp_render_ofc(params, params->deviceinfo.OperationsSupported[i],
 			     sizeof(txt), txt);
     printf("   %04x: %s\n", params->deviceinfo.OperationsSupported[i], txt);
   }
@@ -3911,6 +4022,45 @@ int LIBMTP_Get_Supported_Filetypes(LIBMTP_mtpdevice_t *device, uint16_t ** const
   *filetypes = localtypes;
   *length = localtypelen;
 
+  return 0;
+}
+
+/**
+ * This function checks if the device has some specific capabilities, in
+ * order to avoid calling APIs that may disturb the device.
+ *
+ * @param device a pointer to the device to check the capability on.
+ * @param cap the capability to check.
+ * @return 0 if not supported, any other value means the device has the
+ * requested capability.
+ */
+int LIBMTP_Check_Capability(LIBMTP_mtpdevice_t *device, LIBMTP_devicecap_t cap)
+{
+  switch (cap) {
+  case LIBMTP_DEVICECAP_GetPartialObject:
+    return (ptp_operation_issupported(device->params,
+				      PTP_OC_GetPartialObject) ||
+	    ptp_operation_issupported(device->params,
+				      PTP_OC_ANDROID_GetPartialObject64));
+  case LIBMTP_DEVICECAP_SendPartialObject:
+    return ptp_operation_issupported(device->params,
+				     PTP_OC_ANDROID_SendPartialObject);
+  case LIBMTP_DEVICECAP_EditObjects:
+    return (ptp_operation_issupported(device->params,
+				      PTP_OC_ANDROID_TruncateObject) &&
+	    ptp_operation_issupported(device->params,
+				      PTP_OC_ANDROID_BeginEditObject) &&
+	    ptp_operation_issupported(device->params,
+				      PTP_OC_ANDROID_EndEditObject));
+  /*
+   * Handle other capabilities here, this is also a good place to
+   * blacklist some advanced operations on specific devices if need
+   * be.
+   */
+
+  default:
+    break;
+  }
   return 0;
 }
 
@@ -5124,16 +5274,19 @@ static uint16_t get_func_wrapper(PTPParams* params, void* priv, unsigned long wa
  * This is a manual conversion from MTPDataPutFunc to PTPDataPutFunc
  * to isolate the internal type.
  */
-static uint16_t put_func_wrapper(PTPParams* params, void* priv, unsigned long sendlen, unsigned char *data, unsigned long *putlen)
+static uint16_t put_func_wrapper(PTPParams* params, void* priv, unsigned long sendlen, unsigned char *data)
 {
   MTPDataHandler *handler = (MTPDataHandler *)priv;
   uint16_t ret;
   uint32_t local_putlen = 0;
+
   ret = handler->putfunc(params, handler->priv, sendlen, data, &local_putlen);
-  *putlen = local_putlen;
+
   switch (ret)
   {
     case LIBMTP_HANDLER_RETURN_OK:
+      if (local_putlen != sendlen)
+	return PTP_ERROR_IO;
       return PTP_RC_OK;
     case LIBMTP_HANDLER_RETURN_ERROR:
       return PTP_ERROR_IO;
@@ -6089,12 +6242,12 @@ static int send_file_object_info(LIBMTP_mtpdevice_t *device, LIBMTP_file_t *file
     return -1;
   }
 #endif
-
   if (filedata->storage_id != 0) {
     store = filedata->storage_id;
   } else {
-    store = get_writeable_storageid(device, filedata->filesize);
+    store = get_suggested_storage_id(device, filedata->filesize, localph);
   }
+
   // Detect if something non-primary is in use.
   storage = device->storage;
   if (storage != NULL && store != storage->id) {
@@ -6309,8 +6462,12 @@ static int send_file_object_info(LIBMTP_mtpdevice_t *device, LIBMTP_file_t *file
     if (FLAG_ONLY_7BIT_FILENAMES(ptp_usb)) {
       strip_7bit_from_utf8(new_file.Filename);
     }
-    // We lose precision here.
-    new_file.ObjectCompressedSize = (uint32_t) filedata->filesize;
+    if (filedata->filesize > 0xFFFFFFFFL) {
+      // This is a kludge in the MTP standard for large files.
+      new_file.ObjectCompressedSize = (uint32_t) 0xFFFFFFFF;
+    } else {
+      new_file.ObjectCompressedSize = (uint32_t) filedata->filesize;
+    }
     new_file.ObjectFormat = of;
     new_file.StorageID = store;
     new_file.ParentObject = localph;
@@ -7314,7 +7471,7 @@ LIBMTP_folder_t *LIBMTP_Get_Folder_List(LIBMTP_mtpdevice_t *device)
  *        if the device does not support all the characters in the
  *        name.
  * @param parent_id id of parent folder to add the new folder to,
- *        or 0 to put it in the root directory.
+ *        or 0xFFFFFFFF to put it in the root directory.
  * @param storage_id id of the storage to add this new folder to.
  *        notice that you cannot mismatch storage id and parent id:
  *        they must both be on the same storage! Pass in 0 if you
@@ -7334,7 +7491,7 @@ uint32_t LIBMTP_Create_Folder(LIBMTP_mtpdevice_t *device, char *name,
 
   if (storage_id == 0) {
     // I'm just guessing that a folder may require 512 bytes
-    store = get_writeable_storageid(device, 512);
+    store = get_suggested_storage_id(device, 512, parent_id);
   } else {
     store = storage_id;
   }
@@ -7641,7 +7798,7 @@ static int create_new_abstract_list(LIBMTP_mtpdevice_t *device,
 
   if (storageid == 0) {
     // I'm just guessing that an abstract list may require 512 bytes
-    store = get_writeable_storageid(device, 512);
+    store = get_suggested_storage_id(device, 512, localph);
   } else {
     store = storageid;
   }
@@ -8083,6 +8240,7 @@ static int update_abstract_list(LIBMTP_mtpdevice_t *device,
 	  add_error_to_errorstack(device, LIBMTP_ERROR_GENERAL, "update_abstract_list(): "
 				  "could not set artist name.");
 	}
+	break;
       case PTP_OPC_Composer:
 	// Update composer
 	ret = set_object_string(device, objecthandle, PTP_OPC_Composer, composer);
@@ -8112,6 +8270,7 @@ static int update_abstract_list(LIBMTP_mtpdevice_t *device,
 	  }
 	  free(tmpdate);
 	}
+	break;
       default:
 	break;
       }
@@ -8960,6 +9119,114 @@ int LIBMTP_Get_Thumbnail(LIBMTP_mtpdevice_t *device, uint32_t const id,
       return 0;
   return -1;
 }
+
+
+int LIBMTP_GetPartialObject(LIBMTP_mtpdevice_t *device, uint32_t const id,
+                            uint64_t offset, uint32_t maxbytes,
+                            unsigned char **data, unsigned int *size)
+{
+  PTPParams *params = (PTPParams *) device->params;
+  uint16_t ret;
+
+  if (!ptp_operation_issupported(params, PTP_OC_ANDROID_GetPartialObject64)) {
+    if  (!ptp_operation_issupported(params, PTP_OC_GetPartialObject)) {
+      add_error_to_errorstack(device, LIBMTP_ERROR_GENERAL,
+        "LIBMTP_GetPartialObject: PTP_OC_GetPartialObject not supported");
+      return -1;
+    }
+
+    if (offset >> 32 != 0) {
+      add_error_to_errorstack(device, LIBMTP_ERROR_GENERAL,
+        "LIBMTP_GetPartialObject: PTP_OC_GetPartialObject only supports 32bit offsets");
+      return -1;
+    }
+
+    ret = ptp_getpartialobject(params, id, (uint32_t)offset, maxbytes, data, size);
+  } else {
+    ret = ptp_android_getpartialobject64(params, id, offset, maxbytes, data, size);
+  }
+  if (ret == PTP_RC_OK)
+      return 0;
+  return -1;
+}
+
+
+int LIBMTP_SendPartialObject(LIBMTP_mtpdevice_t *device, uint32_t const id,
+                             uint64_t offset, unsigned char *data, unsigned int size)
+{
+  PTPParams *params = (PTPParams *) device->params;
+  uint16_t ret;
+
+  if (!ptp_operation_issupported(params, PTP_OC_ANDROID_SendPartialObject)) {
+    add_error_to_errorstack(device, LIBMTP_ERROR_GENERAL,
+      "LIBMTP_SendPartialObject: PTP_OC_ANDROID_SendPartialObject not supported");
+    return -1;
+  }
+
+  ret = ptp_android_sendpartialobject(params, id, offset, data, size);
+  if (ret == PTP_RC_OK)
+      return 0;
+  return -1;
+}
+
+
+int LIBMTP_BeginEditObject(LIBMTP_mtpdevice_t *device, uint32_t const id)
+{
+  PTPParams *params = (PTPParams *) device->params;
+  uint16_t ret;
+
+  if (!ptp_operation_issupported(params, PTP_OC_ANDROID_BeginEditObject)) {
+    add_error_to_errorstack(device, LIBMTP_ERROR_GENERAL,
+      "LIBMTP_BeginEditObject: PTP_OC_ANDROID_BeginEditObject not supported");
+    return -1;
+  }
+
+  ret = ptp_android_begineditobject(params, id);
+  if (ret == PTP_RC_OK)
+      return 0;
+  return -1;
+}
+
+
+int LIBMTP_EndEditObject(LIBMTP_mtpdevice_t *device, uint32_t const id)
+{
+  PTPParams *params = (PTPParams *) device->params;
+  uint16_t ret;
+
+  if (!ptp_operation_issupported(params, PTP_OC_ANDROID_EndEditObject)) {
+    add_error_to_errorstack(device, LIBMTP_ERROR_GENERAL,
+      "LIBMTP_EndEditObject: PTP_OC_ANDROID_EndEditObject not supported");
+    return -1;
+  }
+
+  ret = ptp_android_endeditobject(params, id);
+  if (ret == PTP_RC_OK) {
+      // update cached object properties if metadata cache exists
+      update_metadata_cache(device, id);
+      return 0;
+  }
+  return -1;
+}
+
+
+int LIBMTP_TruncateObject(LIBMTP_mtpdevice_t *device, uint32_t const id,
+                          uint64_t offset)
+{
+  PTPParams *params = (PTPParams *) device->params;
+  uint16_t ret;
+
+  if (!ptp_operation_issupported(params, PTP_OC_ANDROID_TruncateObject)) {
+    add_error_to_errorstack(device, LIBMTP_ERROR_GENERAL,
+      "LIBMTP_TruncateObject: PTP_OC_ANDROID_TruncateObject not supported");
+    return -1;
+  }
+
+  ret = ptp_android_truncate(params, id, offset);
+  if (ret == PTP_RC_OK)
+      return 0;
+  return -1;
+}
+
 
 /**
  * Get thumbnail format of a file.
