@@ -426,6 +426,16 @@ typedef enum {
    * @see LIBMTP_TruncateObject()
    */
   LIBMTP_DEVICECAP_EditObjects,
+  /**
+   * This capability tells whether you can call the function to
+   * move an object, @see LIBMTP_MoveObject()
+   */
+  LIBMTP_DEVICECAP_MoveObject,
+  /**
+   * This capability tells whether you can call the function to
+   * copy an object, @see LIBMTP_CopyObject()
+   */
+  LIBMTP_DEVICECAP_CopyObject,
 } LIBMTP_devicecap_t;
 
 /**
@@ -800,6 +810,7 @@ enum LIBMTP_event_enum {
   LIBMTP_EVENT_STORE_REMOVED,
   LIBMTP_EVENT_OBJECT_ADDED,
   LIBMTP_EVENT_OBJECT_REMOVED,
+  LIBMTP_EVENT_DEVICE_PROPERTY_CHANGED,
 };
 typedef enum LIBMTP_event_enum LIBMTP_event_t;
 
@@ -902,6 +913,9 @@ char const * LIBMTP_Get_Filetype_Description(LIBMTP_filetype_t);
 LIBMTP_file_t *LIBMTP_Get_Filelisting(LIBMTP_mtpdevice_t *);
 LIBMTP_file_t *LIBMTP_Get_Filelisting_With_Callback(LIBMTP_mtpdevice_t *,
       LIBMTP_progressfunc_t const, void const * const);
+
+#define LIBMTP_FILES_AND_FOLDERS_ROOT 0xffffffff
+
 LIBMTP_file_t * LIBMTP_Get_Files_And_Folders(LIBMTP_mtpdevice_t *,
 					     uint32_t const,
 					     uint32_t const);
@@ -1044,6 +1058,8 @@ int LIBMTP_Set_Album_Name(LIBMTP_mtpdevice_t *, LIBMTP_album_t *, const char *);
  * @{
  */
 int LIBMTP_Delete_Object(LIBMTP_mtpdevice_t *, uint32_t);
+int LIBMTP_Move_Object(LIBMTP_mtpdevice_t *, uint32_t, uint32_t, uint32_t);
+int LIBMTP_Copy_Object(LIBMTP_mtpdevice_t *, uint32_t, uint32_t, uint32_t);
 int LIBMTP_Set_Object_Filename(LIBMTP_mtpdevice_t *, uint32_t , char *);
 int LIBMTP_GetPartialObject(LIBMTP_mtpdevice_t *, uint32_t const,
                             uint64_t, uint32_t,
@@ -1063,6 +1079,13 @@ typedef void(* LIBMTP_event_cb_fn) (int, LIBMTP_event_t, uint32_t, void *);
 int LIBMTP_Read_Event(LIBMTP_mtpdevice_t *, LIBMTP_event_t *, uint32_t *);
 int LIBMTP_Read_Event_Async(LIBMTP_mtpdevice_t *, LIBMTP_event_cb_fn, void *);
 int LIBMTP_Handle_Events_Timeout_Completed(struct timeval *, int *);
+
+/**
+ * @}
+ * @defgroup custom Custom operations API.
+ * @{
+ */
+int LIBMTP_Custom_Operation(LIBMTP_mtpdevice_t *, uint16_t, int, ...);
 
 /** @} */
 

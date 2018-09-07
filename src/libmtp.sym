@@ -96,6 +96,8 @@ LIBMTP_Get_Album
 LIBMTP_Create_New_Album
 LIBMTP_Update_Album
 LIBMTP_Delete_Object
+LIBMTP_Move_Object
+LIBMTP_Copy_Object
 LIBMTP_Set_File_Name
 LIBMTP_Set_Folder_Name
 LIBMTP_Set_Track_Name
@@ -113,3 +115,4 @@ LIBMTP_BeginEditObject
 LIBMTP_EndEditObject
 LIBMTP_TruncateObject
 LIBMTP_Check_Capability
+LIBMTP_Custom_Operation

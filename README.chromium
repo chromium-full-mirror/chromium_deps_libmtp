@@ -1,9 +1,9 @@
 Name: libmtp
 URL: http://libmtp.sourceforge.net/
-Version: da25de0358e4291f213490b7f38d98436fe2ed14
+Version: 1.1.15 (e9e3b5301058cac332fbf8824703a72a8f80f35d)
 License: LGPL 2.1
 License File: COPYING
-Date: 2012-07-25
+Date: 2018-09-07
 Security Critical: yes.
 
 Description:

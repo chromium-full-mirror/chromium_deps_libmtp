@@ -1164,10 +1164,7 @@ ptp_usb_sendreq(PTPParams* params, PTPContainer* req, int dataphase) {
     unsigned long written = 0;
     unsigned long towrite;
 
-    char txt[256];
-
-    (void) ptp_render_ofc(params, req->Code, sizeof (txt), txt);
-    LIBMTP_USB_DEBUG("REQUEST: 0x%04x, %s\n", req->Code, txt);
+    LIBMTP_USB_DEBUG("REQUEST: 0x%04x, %s\n", req->Code, ptp_get_opcode_name(params, req->Code));
 
     /* build appropriate USB container */
     usbreq.length = htod32(PTP_USB_BULK_REQ_LEN -
@@ -1213,6 +1210,10 @@ ptp_usb_senddata(PTPParams* params, PTPContainer* ptp,
     PTPUSBBulkContainer usbdata;
     uint64_t bytes_left_to_transfer;
     PTPDataHandler memhandler;
+    unsigned long packet_size;
+    PTP_USB *ptp_usb = (PTP_USB *) params->data;
+
+    packet_size = ptp_usb->outep_maxpacket;
 
     LIBMTP_USB_DEBUG("SEND DATA PHASE\n");
 
@@ -1255,7 +1256,9 @@ ptp_usb_senddata(PTPParams* params, PTPContainer* ptp,
     bytes_left_to_transfer = size - datawlen;
     ret = PTP_RC_OK;
     while (bytes_left_to_transfer > 0) {
-        ret = ptp_write_func(bytes_left_to_transfer, handler, params->data, &written);
+	unsigned long max_long_transfer = ULONG_MAX + 1 - packet_size;
+	ret = ptp_write_func (bytes_left_to_transfer > max_long_transfer ? max_long_transfer : bytes_left_to_transfer,
+		handler, params->data, &written);
         if (ret != PTP_RC_OK){
             break;
         }
